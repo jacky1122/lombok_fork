@@ -105,15 +105,22 @@ class ShadowClassLoader extends ClassLoader {
 	ShadowClassLoader(ClassLoader source, String sclSuffix, String selfBase, List<String> parentExclusion, List<String> highlanders) {
 		super(source);
 		this.sclSuffix = sclSuffix;
-		if (parentExclusion != null) for (String pe : parentExclusion) {
-			pe = pe.replace(".", "/");
-			if (!pe.endsWith("/")) pe = pe + "/";
-			this.parentExclusion.add(pe);
-		}
-		if (highlanders != null) for (String hl : highlanders) {
-			this.highlanders.add(hl);
-		}
 		
+		//如果找不到，不需要交给父classloader加载的类或路径
+		if (parentExclusion != null) {
+			for (String pe : parentExclusion) {
+				pe = pe.replace(".", "/");
+				if (!pe.endsWith("/")) pe = pe + "/";
+				this.parentExclusion.add(pe);
+			}
+		}
+		//不需要被多次加载的类名的集合， 只需要被加载一次
+		if (highlanders != null) {
+			for (String hl : highlanders) {
+				this.highlanders.add(hl);
+			}
+		}
+		//解析ShadowClassLoader类所在的路径
 		if (selfBase != null) {
 			SELF_BASE = selfBase;
 			SELF_BASE_LENGTH = selfBase.length();
@@ -129,10 +136,15 @@ class ShadowClassLoader extends ClassLoader {
 			}
 			SELF_BASE = decoded;
 		}
-		
-		if (SELF_BASE.startsWith("jar:file:") && SELF_BASE.endsWith("!/")) SELF_BASE_FILE = new File(SELF_BASE.substring(9, SELF_BASE.length() - 2));
-		else if (SELF_BASE.startsWith("file:")) SELF_BASE_FILE = new File(SELF_BASE.substring(5));
-		else SELF_BASE_FILE = new File(SELF_BASE);
+		//解析ShadowClassLoader的文件路径
+		if (SELF_BASE.startsWith("jar:file:") && SELF_BASE.endsWith("!/")){
+			SELF_BASE_FILE = new File(SELF_BASE.substring(9, SELF_BASE.length() - 2));
+		}else if (SELF_BASE.startsWith("file:")){
+			SELF_BASE_FILE = new File(SELF_BASE.substring(5));
+		}else{
+			SELF_BASE_FILE = new File(SELF_BASE);
+		}
+		//扫描需要用本classloader加载的jar包，加入到override中
 		String scl = System.getProperty("shadow.override." + sclSuffix);
 		if (scl != null && !scl.isEmpty()) {
 			for (String part : scl.split("\\s*" + (File.pathSeparatorChar == ';' ? ";" : ":") + "\\s*")) {
@@ -155,21 +167,31 @@ class ShadowClassLoader extends ClassLoader {
 	 * gets garbage collected if all ShadowClassLoaders that ever tried to request a listing of this jar file, are garbage collected.
 	 */
 	private Set<String> getOrMakeJarListing(final String absolutePathToJar) {
+		//这个方法作用有点意思
+		//mapTrackerToJarPath  用来记录是否一个jarPath是否已经被track过了
+		//mapTrackerToJarContents  用来记录track过得jar
+		//以上两个都是弱引用的hashmap, 也就是Entry可以被回收, 而且还是静态常量，也就是其他ShadownClassloader如果已经遍历过的jar，都可以在这里找到tracker
+		//但是mapJarPathToTracker又是实例变量，那么如果上面两个的entry被回收了，如何利用outTracker获取到对应的jar的文件列表？？
 		synchronized (mapTrackerToJarPath) {
 			/*
 			 * 1) Check our private instance JarPath-to-Tracker Mappings:
 			 */
+			//1)、检查自己的mapJarPathToTracker是否已经遍历过该jar 
 			Object ourTracker = mapJarPathToTracker.get(absolutePathToJar);
 			if (ourTracker != null) {
 				/*
 				 * Yes, we are already tracking this Jar. Just return its contents...
 				 */
+				//如果是，直接从mapTrackerToJarContents中获取便利出来的结果集
 				return mapTrackerToJarContents.get(ourTracker);
 			}
 			
 			/*
 			 * 2) Not tracked by us as yet. Check statically whether others have tracked this JarPath:
 			 */
+			//如果确定我自己未track该jar， 查看mapTrackerToJarPath中是否已经别其他人已经track了该jar， 
+			//将tracker放到我的mapJarPathToTracker中。
+			//然后返回结果集
 			for (Entry<Object, String> entry : mapTrackerToJarPath.entrySet()) {
 				if (entry.getValue().equals(absolutePathToJar)) {
 					/*
@@ -184,6 +206,7 @@ class ShadowClassLoader extends ClassLoader {
 			/*
 			 * 3) Not tracked by anyone so far. Build, publish, track & return Jar contents...
 			 */
+			//如果没有任何人track， 那我来track然后放到对应的map中
 			Object newTracker = new Object();
 			Set<String> jarMembers = getJarMemberSet(absolutePathToJar);
 			
@@ -245,13 +268,15 @@ class ShadowClassLoader extends ClassLoader {
 	 * Looks up {@code altName} in {@code location}, and if that isn't found, looks up {@code name}; {@code altName} can be null in which case it is skipped.
 	 */
 	private URL getResourceFromLocation(String name, String altName, File location) {
+		//如果location是文件夹，直接在文件夹中查找
 		if (location.isDirectory()) {
 			try {
+				//先找是否有加了后缀的文件
 				if (altName != null) {
 					File f = new File(location, altName);
 					if (f.isFile() && f.canRead()) return f.toURI().toURL();
 				}
-				
+				//再找是否有以.class结尾的文件
 				File f = new File(location, name);
 				if (f.isFile() && f.canRead()) return f.toURI().toURL();
 				return null;
@@ -259,10 +284,11 @@ class ShadowClassLoader extends ClassLoader {
 				return null;
 			}
 		}
-		
+		//如果不是文件或者文件不可读，直接返回null
 		if (!location.isFile() || !location.canRead()) return null;
 		
-		File absoluteFile; {
+		File absoluteFile; 
+		{
 			try {
 				absoluteFile = location.getCanonicalFile();
 			} catch (Exception e) {
@@ -345,7 +371,9 @@ class ShadowClassLoader extends ClassLoader {
 	
 	private URL getResource_(String name, boolean noSuper) {
 		String altName = null;
+		//如果name是以.class结尾的，那么去掉.class,拼上后缀
 		if (name.endsWith(".class")) altName = name.substring(0, name.length() - 6) + ".SCL." + sclSuffix;
+		//从override的jar雷彪中寻找是否有加了后缀的文件或者只是以.class结尾的类文件
 		for (File ce : override) {
 			URL url = getResourceFromLocation(name, altName, ce);
 			if (url != null) return url;
@@ -401,12 +429,14 @@ class ShadowClassLoader extends ClassLoader {
 		return null;
 	}
 	
-	@Override public Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+	@Override 
+	public Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+		//先交给父类加载
 		{
 			Class<?> alreadyLoaded = findLoadedClass(name);
 			if (alreadyLoaded != null) return alreadyLoaded;
 		}
-		
+		//只需加载一次类，如果已经存在highlander中，直接拿到后返回
 		if (highlanders.contains(name)) {
 			Class<?> c = highlanderMap.get(name);
 			if (c != null) return c;
@@ -415,7 +445,9 @@ class ShadowClassLoader extends ClassLoader {
 		String fileNameOfClass = name.replace(".", "/") + ".class";
 		URL res = getResource_(fileNameOfClass, true);
 		if (res == null) {
-			if (!exclusionListMatch(fileNameOfClass)) return super.loadClass(name, resolve);
+			if (!exclusionListMatch(fileNameOfClass)){
+				return super.loadClass(name, resolve);
+			}
 			throw new ClassNotFoundException(name);
 		}
 		
