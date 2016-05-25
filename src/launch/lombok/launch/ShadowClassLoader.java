@@ -228,22 +228,27 @@ class ShadowClassLoader extends ClassLoader {
 		/*
 		 * Note:
 		 * Our implementation returns a HashSet. initialCapacity and loadFactor are carefully tweaked for speed and RAM optimization purposes.
+		 * 我们的实现是返回一个HashSet, initialCapacity 和  loadFactory 的值需要仔细拿捏，才能达到优化速度和占用空间的目的。
 		 * 
 		 * Benchmark:
 		 * The HashSet implementation is about 10% slower to build (only happens once) than the ArrayList.
+		 * HashSet的实现导致构建时大概比ArrayList慢10%(仅发生过一次)
 		 * The HashSet with shiftBits = 1 was about 33 times(!) faster than the ArrayList for retrievals.
+		 * 如果shiftBits=1, HashSet的检索速度大概是ArrayList的33倍
 		 */
 		try {
 			int shiftBits = 1;  //  (fast, but big)  0 <= shiftBits <= 5, say  (slower & compact)
+								//  快，但大，   0 <= shiftBits <= 5,  慢  但 紧凑  ？？？(不知道是否是这样的意思)
 			JarFile jar = new JarFile(absolutePathToJar);
 			
 			/*
 			 * Find the first power of 2 >= JarSize (as calculated in HashSet constructor)
+			 * 找到jar.size的最高位
 			 */
 			int jarSizePower2 = Integer.highestOneBit(jar.size());
 			if (jarSizePower2 != jar.size()) jarSizePower2 <<= 1;
 			if (jarSizePower2 == 0) jarSizePower2 = 1;
-			
+			//这样设置的initialCapacity和loadFactor，应该刚好不会导致HashSet重新扩容
 			Set<String> jarMembers = new HashSet<String>(jarSizePower2 >> shiftBits,  1 << shiftBits);
 			try {
 				Enumeration<JarEntry> entries = jar.entries();
