@@ -300,6 +300,7 @@ class ShadowClassLoader extends ClassLoader {
 				absoluteFile = location.getAbsoluteFile();
 			}
 		}
+		//获取jar中的文件名集合
 		Set<String> jarContents = getOrMakeJarListing(absoluteFile.getAbsolutePath());
 		
 		String absoluteUri = absoluteFile.toURI().toString();
@@ -332,7 +333,8 @@ class ShadowClassLoader extends ClassLoader {
 		return (itemString.length() == SELF_BASE_LENGTH + name.length()) && SELF_BASE.regionMatches(0, itemString, 0, SELF_BASE_LENGTH);
 	}
 	
-	@Override public Enumeration<URL> getResources(String name) throws IOException {
+	@Override 
+	public Enumeration<URL> getResources(String name) throws IOException {
 		String altName = null;
 		if (name.endsWith(".class")) altName = name.substring(0, name.length() - 6) + ".SCL." + sclSuffix;
 		
@@ -341,6 +343,8 @@ class ShadowClassLoader extends ClassLoader {
 		// * We need to return an enumeration.
 		// * We can't make one on the fly.
 		// * ArrayList can't make these.
+		// 不太理解 ：  大概是说Vector在eclipse中是经过特殊处理的，我们需要返回enumeration对象，ArrayList做不到，也不要自己写，只有Vector可以满足需要。 
+		// 以上应该是启动eclipse，以agent形式运行lombok的时候，会遇到提到的情况
 		Vector<URL> vector = new Vector<URL>();
 		
 		for (File ce : override) {
@@ -378,12 +382,13 @@ class ShadowClassLoader extends ClassLoader {
 		String altName = null;
 		//如果name是以.class结尾的，那么去掉.class,拼上后缀
 		if (name.endsWith(".class")) altName = name.substring(0, name.length() - 6) + ".SCL." + sclSuffix;
-		//从override的jar雷彪中寻找是否有加了后缀的文件或者只是以.class结尾的类文件
+		//从override的jar列表中寻找是否有加了后缀的文件或者只是以.class结尾的类文件
 		for (File ce : override) {
 			URL url = getResourceFromLocation(name, altName, ce);
 			if (url != null) return url;
 		}
 		
+		//如果override不是空的，并且没找到对应的文件，noSuper=false, 需要通过父classloader查找
 		if (!override.isEmpty()) {
 			if (noSuper) return null;
 			if (altName != null) {
@@ -399,10 +404,11 @@ class ShadowClassLoader extends ClassLoader {
 				return null;
 			}
 		}
-		
+		//如果override为空，那么找ShadowClassLoader自己所在文件夹或jar包中是否存在加了后缀的文件或者只是以.class结尾的类文件
 		URL url = getResourceFromLocation(name, altName, SELF_BASE_FILE);
 		if (url != null) return url;
 		
+		//如果未找到，查找父classloader
 		if (altName != null) {
 			URL res = super.getResource(altName);
 			if (res != null && (!noSuper || inOwnBase(res, altName))) return res;
@@ -423,8 +429,10 @@ class ShadowClassLoader extends ClassLoader {
 	private URL getResourceSkippingSelf(String name) throws IOException {
 		URL candidate = super.getResource(name);
 		if (candidate == null) return null;
+		//确认是否找到的资源路径与SELF_BASE相同，如果不同，直接返回
 		if (!inOwnBase(candidate, name)) return candidate;
 		
+		//否则通过父classloader搜索所有可能存在的资源路径，与SELF_BASE不同的，可以认为找到，直接返回
 		Enumeration<URL> en = super.getResources(name);
 		while (en.hasMoreElements()) {
 			candidate = en.nextElement();
@@ -448,14 +456,16 @@ class ShadowClassLoader extends ClassLoader {
 		}
 		
 		String fileNameOfClass = name.replace(".", "/") + ".class";
+		//查找override的jar列表中是否有该类，如果override为空，查找ShadowClassLoader自己所在的文件夹或jar中是否存在
 		URL res = getResource_(fileNameOfClass, true);
+		//如果没找到资源，说明步骤ShadowClassLoader的目标加载jar或文件夹中，  交给父classloader加载这个类
 		if (res == null) {
 			if (!exclusionListMatch(fileNameOfClass)){
 				return super.loadClass(name, resolve);
 			}
 			throw new ClassNotFoundException(name);
 		}
-		
+		//读取文件
 		byte[] b;
 		int p = 0;
 		try {
@@ -479,7 +489,7 @@ class ShadowClassLoader extends ClassLoader {
 		} catch (IOException e) {
 			throw new ClassNotFoundException("I/O exception reading class " + name, e);
 		}
-		
+		//交给defineClass去生成class对象
 		Class<?> c;
 		try {
 			c = defineClass(name, b, 0, p);
@@ -490,12 +500,12 @@ class ShadowClassLoader extends ClassLoader {
 			}
 			throw e;
 		}
-		
+		//如果highlanders包含了该类名，将class对象加到highlanderMap中
 		if (highlanders.contains(name)) {
 			Class<?> alreadyDefined = highlanderMap.putIfAbsent(name, c);
 			if (alreadyDefined != null) c = alreadyDefined;
 		}
-		
+		//link类对象
 		if (resolve) resolveClass(c);
 		return c;
 	}
