@@ -135,7 +135,8 @@ public class AnnotationProcessor extends AbstractProcessor {
 		}
 	}
 	
-	@Override public void init(ProcessingEnvironment procEnv) {
+	@Override 
+	public void init(ProcessingEnvironment procEnv) {
 		super.init(procEnv);
 		for (ProcessorDescriptor proc : registered) {
 			if (proc.want(procEnv, delayedWarnings)) active.add(proc);
@@ -152,17 +153,23 @@ public class AnnotationProcessor extends AbstractProcessor {
 		}
 	}
 	
-	@Override public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+	
+	@Override 
+	public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
 		if (!delayedWarnings.isEmpty()) {
 			Set<? extends Element> rootElements = roundEnv.getRootElements();
 			if (!rootElements.isEmpty()) {
 				Element firstRoot = rootElements.iterator().next();
-				for (String warning : delayedWarnings) processingEnv.getMessager().printMessage(Kind.WARNING, warning, firstRoot);
+				for (String warning : delayedWarnings){
+					processingEnv.getMessager().printMessage(Kind.WARNING, warning, firstRoot);
+				}
 				delayedWarnings.clear();
 			}
 		}
 		
-		for (ProcessorDescriptor proc : active) proc.process(annotations, roundEnv);
+		for (ProcessorDescriptor proc : active){
+			proc.process(annotations, roundEnv);
+		}
 		
 		return false;
 	}
@@ -170,7 +177,9 @@ public class AnnotationProcessor extends AbstractProcessor {
 	/**
 	 * We just return the latest version of whatever JDK we run on. Stupid? Yeah, but it's either that or warnings on all versions but 1. Blame Joe.
 	 */
-	@Override public SourceVersion getSupportedSourceVersion() {
+	@Override 
+	public SourceVersion getSupportedSourceVersion() {
+		//返回最后一个版本(邪恶的笑个)
 		return SourceVersion.values()[SourceVersion.values().length - 1];
 	}
 }
